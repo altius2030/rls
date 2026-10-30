@@ -18,7 +18,6 @@ button{padding:9px 16px;border:0;border-radius:4px;cursor:pointer;font-size:12px
 .b1{background:#1a73e8;color:#fff}
 .b1:disabled{background:#a0c4f0;cursor:not-allowed}
 .b2{background:#137333;color:#fff}
-.b2:disabled{background:#7cb890;cursor:not-allowed}
 .st{padding:7px 10px;border-radius:4px;margin-top:8px;font-size:11px;display:none}
 .st.s{background:#e6f4ea;color:#137333;display:block}
 .st.e{background:#fce8e6;color:#c5221f;display:block}
@@ -28,7 +27,6 @@ th,td{padding:4px 6px;text-align:left;border-bottom:1px solid #eee;white-space:n
 th{background:#f8f9fa;font-weight:600;position:sticky;top:0}
 .pw{max-height:400px;overflow-y:auto;border:1px solid #eee;border-radius:4px}
 .bdg{display:inline-block;padding:2px 5px;border-radius:7px;font-size:10px}
-.bdg-w{background:#fff3cd;color:#856404}
 .bdg-p{background:#e8f0fe;color:#1a73e8}
 .meta{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
 .meta span{font-size:11px;color:#666}
@@ -50,7 +48,7 @@ th{background:#f8f9fa;font-weight:600;position:sticky;top:0}
 </div>
 <button class="b1" id="btnLoad" onclick="loadProducts()">📋 Загрузить товары</button>
 <button class="b2" id="btnExport" onclick="exportTXP()" disabled>📥 Скачать TXP</button>
-<a href="/download/rongta_send.py" class="b1" style="text-decoration:none;display:inline-block;margin-left:6px;padding:9px 16px;border-radius:4px;font-size:12px;font-weight:500;">📥 Скрипт для ПК</a>
+<a href="/download/rongta_send.py" class="b1" style="text-decoration:none;display:inline-block;padding:9px 16px;border-radius:4px;font-size:12px;">📥 Скрипт для ПК</a>
 <div class="st" id="st"></div>
 </div>
 
@@ -64,85 +62,33 @@ th{background:#f8f9fa;font-weight:600;position:sticky;top:0}
 </div>
 
 <script>
-let products=[],token='';
-
+let products=[];
 function st(t,x){const e=document.getElementById('st');e.className='st '+t;e.textContent=x}
 function nh(){try{window.parent.postMessage({name:'EventMessage',height:document.body.scrollHeight},'*')}catch(e){}}
 
-// Получаем accountId и токен при загрузке
-async function init(){
-await getToken();
-}
-
-async function getToken(){
-try{
-const r=await fetch('/api/token');
-const d=await r.json();
-if(d.ok){token=d.token;st('l','✅ Готово к работе. Нажмите "Загрузить товары".');nh()}
-else{st('e','Ошибка: '+d.error)}
-}catch(e){st('e','Ошибка сети: '+e.message)}
-}
-
 async function loadProducts(){
-if(!token){st('e','Токен не найден');return}
 document.getElementById('btnLoad').disabled=true;
 st('l','Загрузка товаров...');
-
 try{
-const h={'Authorization':'Bearer '+token,'Accept-Encoding':'gzip'};
-
-// Загружаем группы
-let folders=[],url='https://api.moysklad.ru/api/remap/1.2/entity/productfolder?limit=100';
-while(url){const r=await fetch(url,{headers:h});if(!r.ok)break;const d=await r.json();(d.rows||[]).forEach(f=>folders.push({id:f.id}));url=d.meta?.nextHref}
-const fm={};folders.forEach((f,i)=>{fm[f.id]=i+1});
-
-// Загружаем товары
-products=[];url='https://api.moysklad.ru/api/remap/1.2/entity/product?limit=100&expand=salePrices';
-while(url){const r=await fetch(url,{headers:h});if(!r.ok)break;const d=await r.json();
-for(const row of d.rows||[]){
-let bc='';for(const b of(row.barcodes||[])){bc=b.ean13||b.ean8||b.code||'';if(bc)break}
-let pr=0;for(const sp of(row.salePrices||[])){if(['Цена продажи','Розничная'].includes(sp.priceType?.name)){pr=(sp.value||0)/100;break}}if(!pr&&row.salePrices?.length)pr=(row.salePrices[0].value||0)/100;
-const fr=row.productFolder||{},fi=fr.id?fm[fr.id]||0:0;
-const code=row.code||row.externalCode||String(products.length+1);
-products.push({
-name:row.name||'(без названия)',
-code:code,
-plu:code,
-barcode:bc,
-weight:row.weight||0,
-isWeighed:row.weighed||false,
-price:pr,
-dept:fi+1,
-folderIndex:fi
-})}
-url=d.meta?.nextHref;st('l','Загружено '+products.length+'...');
-}
-
+const r=await fetch('/api/products');
+const d=await r.json();
+if(d.error){st('e','Ошибка: '+d.error);return}
+products=d.products||[];
+if(!products.length){st('e','Товары не найдены');return}
 displayProducts();
-
-}catch(e){st('e','Ошибка: '+e.message)}finally{document.getElementById('btnLoad').disabled=false}
+}catch(e){st('e','Ошибка сети: '+e.message)}finally{document.getElementById('btnLoad').disabled=false}
 }
 
 function displayProducts(){
-if(!products.length){st('e','Товары не найдены');return}
-
 const deptStart=parseInt(document.getElementById('dept').value)||1;
-
-// Показываем
 document.getElementById('resCard').style.display='block';
 document.getElementById('cnt').textContent=products.length;
-
-// Мета-инфо
-const weighed=products.filter(p=>p.isWeighed).length;
-const withCode=products.filter(p=>p.code).length;
-const withBC=products.filter(p=>p.barcode).length;
-document.getElementById('meta').html='<span>Весовых: <strong>'+weighed+'</strong></span><span>С кодом: <strong>'+withCode+'</strong></span><span>Со штрихкодом: <strong>'+withBC+'</strong></span>'
-
-// Таблица
+const wg=products.filter(p=>p.isWeighed).length,bc=products.filter(p=>p.barcode).length;
+document.getElementById('meta').innerHTML='<span>Всего: <strong>'+products.length+'</strong></span><span>Весовых: <strong>'+wg+'</strong></span><span>Со штрихкодом: <strong>'+bc+'</strong></span>';
 let html='<table><thead><tr><th>PLU</th><th>Код</th><th>Наименование</th><th>Вес.ШК</th><th>Цена</th><th>Вес</th><th>Отд.</th></tr></thead><tbody>';
 products.forEach(p=>{
-const wbc=genWeightBarcode(p);
-html+='<tr><td>'+p.plu+'</td><td>'+esc(p.code)+'</td><td title="'+esc(p.name)+'">'+esc(p.name)+'</td><td class="wbc">'+wbc+'</td><td>'+(p.price?p.price.toFixed(2):'-')+'</td><td>'+(p.weight||'-')+'</td><td>'+(deptStart+p.folderIndex)+'</td></tr>';
+const wbc=genWB(p);const dept=deptStart+p.folderIndex;
+html+='<tr><td>'+esc(p.code)+'</td><td>'+esc(p.code)+'</td><td title="'+esc(p.name)+'">'+esc(p.name)+'</td><td style="font-family:monospace">'+wbc+'</td><td>'+(p.price?p.price.toFixed(2):'-')+'</td><td>'+(p.weight||'-')+'</td><td>'+dept+'</td></tr>';
 });
 html+='</tbody></table>';
 document.getElementById('tw').innerHTML=html;
@@ -151,64 +97,29 @@ st('s','✅ Загружено '+products.length+' товаров');
 nh();
 }
 
-function genWeightBarcode(p){
-// Весовой штрих-код: префикс(2) + PLU(5) + checksum(1) = EAN-12 или EAN-13
-// Для весовых товаров: 2X + PLU(4-5 цифр) + checksum
-if(!p.code)return'';
-const prefix=parseInt(document.getElementById('prefix').value)||20;
-let pluNum=p.code.replace(/\D/g,'').substring(0,5)||'00000';
-pluNum=pluNum.padStart(5,'0').substring(0,5);
-const base=String(prefix)+pluNum;
-// EAN-13 checksum
-let sum=0;
-for(let i=0;i<base.length;i++){sum+=parseInt(base[i])*(i%2===0?1:3)}
-const check=(10-(sum%10))%10;
-return base+String(check);
+function genWB(p){
+if(!p.code)return '';
+const px=parseInt(document.getElementById('prefix').value)||20;
+let plu=(p.code||'').replace(/\D/g,'').substring(0,5).padStart(5,'0');
+const base=String(px)+plu.substring(0,5);
+let s=0;for(let i=0;i<base.length;i++)s+=parseInt(base[i])*(i%2===0?1:3);
+return base+String((10-s%10)%10);
 }
 
 function exportTXP(){
 if(!products.length){st('e','Сначала загрузите товары');return}
-const prefix=parseInt(document.getElementById('prefix').value)||20;
-const deptStart=parseInt(document.getElementById('dept').value)||1;
-
-const lines=['Hotkey\tPLU Name\tFresh Commodity Code\tDepartment\tUnit Price\tWeight\tPLU Type\tPrice Type\tLabel Type\tBarcode\tBarcode Format\tValid Days\tPacking Type'];
-
+const px=parseInt(document.getElementById('prefix').value)||20,ds=parseInt(document.getElementById('dept').value)||1;
+const l=['Hotkey\tPLU Name\tFresh Code\tDept\tPrice\tWeight\tType\tPType\tLabel\tBarcode\tFmt\tValid\tPack'];
 products.forEach(p=>{
-const wbc=genWeightBarcode(p);
-const priceKop=Math.round((p.price||0)*100);
-const weightG=Math.round((p.weight||0)*1000);
-const isWeight=p.isWeighed?0:1;
-const dept=Math.min(deptStart+p.folderIndex,99);
-const bc=p.barcode||wbc;
-
-lines.push([
-p.plu,
-(p.name||'').substring(0,36),
-(p.code||'').substring(0,6),
-dept,
-priceKop,
-weightG,
-isWeight,
-isWeight===0?0:2,'0',
-bc.substring(0,13),'0','0','0'
-].join('\t'));
+const wbc=genWB(p),kp=Math.round((p.price||0)*100),g=Math.round((p.weight||0)*1000),w=p.isWeighed?0:1;
+l.push([p.code,(p.name||'').substring(0,36),(p.code||'').substring(0,6),Math.min(ds+p.folderIndex,99),kp,g,w,w===0?0:2,'0',(p.barcode||wbc).substring(0,13),'0','0','0'].join('\t'));
 });
-
-const txp=lines.join('\n');
-const blob=new Blob([txp],{type:'text/plain;charset=utf-8'});
-const url=URL.createObjectURL(blob);
-const a=document.createElement('a');
-a.href=url;
-a.download='rongta_plu_'+new Date().toISOString().slice(0,10)+'.txp';
-a.click();
-URL.revokeObjectURL(url);
-st('s','✅ TXP скачан ('+products.length+' записей). Запустите rongta_send.py для отправки в весы.');
+const b=new Blob([l.join('\n')],{type:'text/plain;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='rongta_plu_'+new Date().toISOString().slice(0,10)+'.txp';a.click();URL.revokeObjectURL(u);
+st('s','✅ TXP скачан ('+products.length+'). Запустите rongta_send.py');
 nh();
 }
 
 function esc(t){const d=document.createElement('div');d.textContent=t||'';return d.innerHTML}
-
-init();
 window.addEventListener('load',nh);
 </script>
 </body>

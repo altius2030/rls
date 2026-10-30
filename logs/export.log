@@ -1,0 +1,48 @@
+2026-10-30 16:10:27,965 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+
+2026-10-30 16:10:58,228 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+
+2026-10-30 16:11:15,757 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+
+2026-10-30 16:15:08,591 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+
+2026-10-30 16:15:56,201 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+
+2026-10-30 16:16:59,319 [ERROR] Auth HTTP 415: <html>
+<head><title>415 Unsupported Media Type</title></head>
+<body>
+<center><h1>415 Unsupported Media Type</h1></center>
+<hr><center>nginx/1.30.2</center>
+</body>
+</html>
+

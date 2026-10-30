@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Rongta RLS1000 — Выгрузка товаров</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa; color: #333; padding: 14px;
+        }
+        .container { max-width: 880px; margin: 0 auto; }
+        h1 { color: #1a73e8; margin-bottom: 2px; font-size: 18px; }
+        .subtitle { color: #666; margin-bottom: 14px; font-size: 12px; }
+        .card { background: white; border-radius: 8px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 13px; margin-bottom: 8px; color: #444; }
+        label { display: block; font-size: 11px; color: #555; margin-bottom: 2px; font-weight: 500; }
+        input, select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; margin-bottom: 6px; }
+        button { padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; }
+        .btn-primary { background: #1a73e8; color: white; }
+        .btn-success { background: #137333; color: white; }
+        .btn-secondary { background: #e8eaed; color: #333; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .row { display: flex; gap: 8px; }
+        .row > div { flex: 1; }
+        .status { padding: 7px 10px; border-radius: 4px; margin-top: 8px; font-size: 11px; display: none; }
+        .status.success { background: #e6f4ea; color: #137333; display: block; }
+        .status.error { background: #fce8e6; color: #c5221f; display: block; }
+        .status.loading { background: #e8f0fe; color: #1a73e8; display: block; }
+        .status.info { background: #f1f3f4; color: #5f6368; display: block; }
+        table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 6px; }
+        th, td { padding: 4px 6px; text-align: left; border-bottom: 1px solid #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        th { background: #f8f9fa; font-weight: 600; }
+        .products-wrapper { max-height: 280px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; }
+        .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .badge { display: inline-block; padding: 2px 5px; border-radius: 7px; font-size: 10px; }
+        .badge-count { background: #e8f0fe; color: #1a73e8; }
+        textarea { width: 100%; height: 150px; font-family: monospace; font-size: 10px; border: 1px solid #ddd; border-radius: 4px; padding: 6px; resize: vertical; }
+        .section-desc { font-size: 11px; color: #888; margin-bottom: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚖️ Rongta RLS1000 — Выгрузка товаров</h1>
+        <p class="subtitle">МойСклад → TXP → PLU Manager → весы RLS1000 (требуется <code>local_driver.py</code> на ПК)</p>
+
+        <div class="card">
+            <h2>Параметры TXP</h2>
+            <div class="row">
+                <div>
+                    <label>Начальный PLU</label>
+                    <input type="number" id="pluStart" value="1" min="1">
+                </div>
+                <div>
+                    <label>Начальный отдел</label>
+                    <input type="number" id="deptStart" value="1" min="1" max="99">
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn-primary" id="btnLoad" onclick="loadProducts()">📋 Загрузить товары</button>
+                <button class="btn-success" id="btnExport" onclick="generateTXP()">📤 Сформировать TXP</button>
+                <button class="btn-primary" id="btnSend" onclick="sendToDriver()">🚀 В драйвер Rongta</button>
+            </div>
+            <div class="status" id="status"></div>
+        </div>
+
+        <div class="card" id="previewCard" style="display: none;">
+            <h2>Товары <span class="badge badge-count" id="productCount">0</span></h2>
+            <div class="products-wrapper">
+                <table>
+                    <thead><tr><th>PLU</th><th>Наименование</th><th>Штрихкод</th><th>Цена</th><th>Вес</th></tr></thead>
+                    <tbody id="productsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card" id="txpCard" style="display: none;">
+            <h2>TXP-файл</h2>
+            <textarea id="txpContent" readonly></textarea>
+            <div class="actions" style="margin-top:6px;">
+                <button class="btn-secondary" onclick="downloadTXP()">💾 Скачать</button>
+                <button class="btn-secondary" onclick="copyTXP()">📋 Копировать</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let productsData = [];
+        let txpContent = "";
+
+        function notifyHeight() {
+            try { window.parent.postMessage({ name: 'EventMessage', height: document.body.scrollHeight }, '*'); } catch(e) {}
+        }
+
+        function showStatus(type, text) {
+            const el = document.getElementById('status');
+            el.className = 'status ' + type;
+            el.textContent = text;
+        }
+
+        async function loadProducts() {
+            const btn = document.getElementById('btnLoad');
+            btn.disabled = true;
+            showStatus('loading', 'Загрузка товаров из МоегоСклада...');
+
+            try {
+                const resp = await fetch('/api/products');
+                const data = await resp.json();
+
+                if (data.error === 'no_token') {
+                    showStatus('error', 'Токен не найден. Переустановите решение.');
+                    btn.disabled = false;
+                    return;
+                }
+
+                productsData = data.products || [];
+                const tbody = document.getElementById('productsBody');
+                tbody.innerHTML = '';
+
+                productsData.forEach((p, idx) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${idx + 1}</td>
+                        <td title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+                        <td>${escapeHtml(p.barcode || '-')}</td>
+                        <td>${p.price ? p.price.toFixed(2) : '-'}</td>
+                        <td>${p.weight || '-'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('productCount').textContent = productsData.length;
+                document.getElementById('previewCard').style.display = 'block';
+                showStatus('success', `Загружено ${productsData.length} товаров`);
+                notifyHeight();
+
+            } catch(e) {
+                showStatus('error', 'Ошибка: ' + e.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function generateTXP() {
+            if (!productsData.length) {
+                showStatus('error', 'Сначала загрузите товары');
+                return;
+            }
+
+            const pluStart = parseInt(document.getElementById('pluStart').value) || 1;
+            const deptStart = parseInt(document.getElementById('deptStart').value) || 1;
+
+            const lines = ['Hotkey\tPLU Name\tFresh Commodity Code\tDepartment\tUnit Price\tWeight\tPLU Type\tPrice Type\tLabel Type\tBarcode\tBarcode Format\tValid Days\tPacking Type'];
+
+            productsData.forEach((p, idx) => {
+                const plu = pluStart + idx;
+                const priceKopecks = Math.round((p.price || 0) * 100);
+                const weightGrams = Math.round((p.weight || 0) * 1000);
+                const dept = deptStart + (p.folderIndex || 0);
+                const isWeight = p.isWeightProduct ? 0 : 1;
+                const priceType = p.isWeightProduct ? 0 : 2;
+
+                lines.push([
+                    plu,
+                    (p.name || '').substring(0, 36),
+                    (p.externalCode || p.article || '').substring(0, 6),
+                    Math.min(dept, 99),
+                    priceKopecks,
+                    weightGrams,
+                    isWeight,
+                    priceType,
+                    0,
+                    (p.barcode || '').substring(0, 13),
+                    0, 0, 0
+                ].join('\t'));
+            });
+
+            txpContent = lines.join('\n');
+            document.getElementById('txpContent').value = txpContent;
+            document.getElementById('txpCard').style.display = 'block';
+            showStatus('success', `TXP сформирован: ${productsData.length} записей`);
+            notifyHeight();
+        }
+
+        async function sendToDriver() {
+            if (!txpContent) {
+                showStatus('error', 'Сначала сформируйте TXP');
+                return;
+            }
+
+            const btn = document.getElementById('btnSend');
+            btn.disabled = true;
+            showStatus('loading', 'Отправка в драйвер Rongta...');
+
+            try {
+                // Отправляем TXP в локальный драйвер на ПК
+                const resp = await fetch('http://localhost:9101/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        txp: txpContent,
+                        filename: 'rongta_plu.txp'
+                    }),
+                });
+
+                const data = await resp.json();
+
+                if (data.launched) {
+                    showStatus('success', '✅ PLU Manager запущен с TXP-файлом! Данные отправлены в весы.');
+                } else if (data.error) {
+                    showStatus('error', 'Ошибка: ' + data.error);
+                } else {
+                    showStatus('error', 'Локальный драйвер не найден. Запустите local_driver.py');
+                }
+
+            } catch (e) {
+                showStatus('error', 'Локальный драйвер недоступен. Убедитесь что local_driver.py запущен на вашем ПК.');
+            } finally {
+                btn.disabled = false;
+                notifyHeight();
+            }
+        }
+
+        function downloadTXP() {
+            if (!txpContent) return;
+            const blob = new Blob([txpContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'rongta_plu_' + new Date().toISOString().slice(0,10) + '.txp';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function copyTXP() {
+            if (!txpContent) return;
+            navigator.clipboard.writeText(txpContent).then(() => {
+                showStatus('success', 'Скопировано в буфер');
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        window.addEventListener('load', () => {
+            notifyHeight();
+            showStatus('info', 'Нажмите "Загрузить товары"');
+        });
+    </script>
+</body>
+</html>
