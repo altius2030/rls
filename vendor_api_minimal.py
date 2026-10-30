@@ -62,10 +62,10 @@ async def activate(app_id: str, account_id: str, request: Request):
     tokens = load_tokens()
     tokens[account_id] = {"token": token, "account_name": body.get("accountName", ""), "activated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     save_tokens(tokens)
-    # Выводим токен в логи чтобы скопировать в Render Dashboard
     logger.info(f"ACTIVATE: account={account_id}, token={'yes' if token else 'no'}")
+    # Выводим токен в логи чтобы скопировать в Render Dashboard
     if token:
-        logger.info(f"MOYSKLAD_TOKEN={token}")
+        logger.info(f"======= COPY THIS TO RENDER ENV: MOYSKLAD_TOKEN={token} =======")
     return JSONResponse(content={"status": "Activated"})
 
 
