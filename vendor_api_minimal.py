@@ -2,6 +2,7 @@
 Rongta RLS1000 — Vendor API + CORS Proxy + iframe.
 """
 
+import os
 import json
 import logging
 import time
@@ -15,6 +16,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Переменная окружения для токена (установите в Render Dashboard)
+TOKEN = os.environ.get("MOYSKLAD_TOKEN", "")
 
 TOKEN_FILE = Path(__file__).resolve().parent / "tokens.json"
 
@@ -33,6 +37,10 @@ def save_tokens(tokens: dict):
 
 
 def get_first_token() -> str:
+    # Сначала проверяем переменную окружения
+    if TOKEN:
+        return TOKEN
+    # Потом файл
     for entry in load_tokens().values():
         if entry.get("token"):
             return entry["token"]
@@ -54,6 +62,10 @@ async def activate(app_id: str, account_id: str, request: Request):
     tokens = load_tokens()
     tokens[account_id] = {"token": token, "account_name": body.get("accountName", ""), "activated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     save_tokens(tokens)
+    # Выводим токен в логи чтобы скопировать в Render Dashboard
+    logger.info(f"ACTIVATE: account={account_id}, token={'yes' if token else 'no'}")
+    if token:
+        logger.info(f"MOYSKLAD_TOKEN={token}")
     return JSONResponse(content={"status": "Activated"})
 
 
