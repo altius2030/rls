@@ -83,8 +83,20 @@ async def proxy_products():
 
     headers = {"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip"}
     base = "https://api.moysklad.ru/api/remap/1.2"
+    debug_info = {}
 
-    async with httpx.AsyncClient(timeout=30) as cli:
+    async with httpx.AsyncClient(timeout=60) as cli:
+        # Отладка — первая страница
+        r0 = await cli.get(f"{base}/entity/product?limit=1&expand=attributes", headers=headers)
+        debug_info["status"] = r0.status_code
+        if r0.status_code == 200:
+            d0 = r0.json()
+            debug_info["total_in_ms"] = d0.get("meta", {}).get("size", "?")
+            if d0.get("rows"):
+                fp = d0["rows"][0]
+                debug_info["sample_keys"] = list(fp.keys())[:20]
+                debug_info["sample_attrs"] = fp.get("attributes", [])[:3]
+
         # Загружаем группы
         folders = []
         url = f"{base}/entity/productfolder?limit=100"
@@ -99,9 +111,9 @@ async def proxy_products():
 
         folder_map = {f["id"]: i + 1 for i, f in enumerate(folders)}
 
-        # Загружаем товары
+        # Загружаем товары с доп.полями
         products = []
-        url = f"{base}/entity/product?limit=100&expand=salePrices"
+        url = f"{base}/entity/product?limit=100&expand=salePrices,attributes"
         while url:
             r = await cli.get(url, headers=headers)
             if r.status_code != 200:
@@ -125,6 +137,15 @@ async def proxy_products():
                     if row.get("salePrices"):
                         price = (row["salePrices"][0].get("value") or 0) / 100
 
+                # Проверяем доп.поле "Весовой товар"
+                is_weighed = row.get("weighed", False)
+                for attr in (row.get("attributes") or []):
+                    attr_name = (attr.get("name") or "").lower()
+                    attr_value = attr.get("value")
+                    if "весов" in attr_name and attr_value in [True, "true", "Да", "да", 1, "1"]:
+                        is_weighed = True
+                        break
+
                 fr = row.get("productFolder") or {}
                 fid = fr.get("id", "")
                 code = row.get("code") or row.get("externalCode") or ""
@@ -134,14 +155,14 @@ async def proxy_products():
                     "code": code,
                     "barcode": bc,
                     "weight": row.get("weight") or 0,
-                    "isWeighed": row.get("weighed") or False,
+                    "isWeighed": is_weighed,
                     "price": price,
                     "folderIndex": folder_map.get(fid, 0),
                 })
 
             url = d.get("meta", {}).get("nextHref")
 
-    return JSONResponse(content={"products": products, "total": len(products)})
+    return JSONResponse(content={"products": products, "total": len(products), "_debug": debug_info})
 
 
 # ============================================================

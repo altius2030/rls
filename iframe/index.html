@@ -72,9 +72,10 @@ st('l','Загрузка товаров...');
 try{
 const r=await fetch('/api/products');
 const d=await r.json();
-if(d.error){st('e','Ошибка: '+d.error);return}
+if(d.error){st('e','Ошибка: '+d.error);console.log(d);return}
+if(d._debug){console.log('DEBUG:',d._debug);}
 products=d.products||[];
-if(!products.length){st('e','Товары не найдены');return}
+if(!products.length){st('e','Товары не найдены. Debug: '+JSON.stringify(d._debug||{}));return}
 displayProducts();
 }catch(e){st('e','Ошибка сети: '+e.message)}finally{document.getElementById('btnLoad').disabled=false}
 }
