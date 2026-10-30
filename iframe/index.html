@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Rongta RLS1000 — Выгрузка</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#333;padding:14px}
+.c{max-width:900px;margin:0 auto}
+h1{color:#1a73e8;font-size:18px;margin-bottom:4px}
+.sub{color:#666;font-size:12px;margin-bottom:12px}
+.card{background:#fff;border-radius:8px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.row{display:flex;gap:8px}
+.row>div{flex:1}
+label{display:block;font-size:11px;color:#555;margin-bottom:3px;font-weight:500}
+input{width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:12px;margin-bottom:6px}
+button{padding:9px 16px;border:0;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;margin-right:6px;margin-bottom:6px}
+.b1{background:#1a73e8;color:#fff}
+.b1:disabled{background:#a0c4f0;cursor:not-allowed}
+.b2{background:#137333;color:#fff}
+.b2:disabled{background:#7cb890;cursor:not-allowed}
+.st{padding:7px 10px;border-radius:4px;margin-top:8px;font-size:11px;display:none}
+.st.s{background:#e6f4ea;color:#137333;display:block}
+.st.e{background:#fce8e6;color:#c5221f;display:block}
+.st.l{background:#e8f0fe;color:#1a73e8;display:block}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}
+th,td{padding:4px 6px;text-align:left;border-bottom:1px solid #eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+th{background:#f8f9fa;font-weight:600;position:sticky;top:0}
+.pw{max-height:400px;overflow-y:auto;border:1px solid #eee;border-radius:4px}
+.bdg{display:inline-block;padding:2px 5px;border-radius:7px;font-size:10px}
+.bdg-w{background:#fff3cd;color:#856404}
+.bdg-p{background:#e8f0fe;color:#1a73e8}
+.meta{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+.meta span{font-size:11px;color:#666}
+.meta strong{color:#333}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>⚖️ Rongta RLS1000 — Выгрузка PLU</h1>
+<p class="sub">PLU = код товара | Весовой штрих-код генерируется автоматически</p>
+
+<div class="card">
+<h2 style="font-size:13px;margin-bottom:8px">Параметры</h2>
+<div class="row">
+<div><label>Префикс весового штрихкода (20-29)</label>
+<input type="number" id="prefix" value="20" min="20" max="29"></div>
+<div><label>Начальный отдел</label>
+<input type="number" id="dept" value="1" min="1" max="99"></div>
+</div>
+<button class="b1" id="btnLoad" onclick="loadProducts()">📋 Загрузить товары</button>
+<button class="b2" id="btnExport" onclick="exportTXP()" disabled>📥 Скачать TXP</button>
+<a href="/download/rongta_send.py" class="b1" style="text-decoration:none;display:inline-block;margin-left:6px;padding:9px 16px;border-radius:4px;font-size:12px;font-weight:500;">📥 Скрипт для ПК</a>
+<div class="st" id="st"></div>
+</div>
+
+<div class="card" id="resCard" style="display:none">
+<h2 style="font-size:13px;margin-bottom:8px">
+Товары <span class="bdg bdg-p" id="cnt">0</span>
+</h2>
+<div class="meta" id="meta"></div>
+<div class="pw" id="tw" style="margin-top:8px"></div>
+</div>
+</div>
+
+<script>
+let products=[],token='';
+
+function st(t,x){const e=document.getElementById('st');e.className='st '+t;e.textContent=x}
+function nh(){try{window.parent.postMessage({name:'EventMessage',height:document.body.scrollHeight},'*')}catch(e){}}
+
+// Получаем accountId и токен при загрузке
+async function init(){
+await getToken();
+}
+
+async function getToken(){
+try{
+const r=await fetch('/api/token');
+const d=await r.json();
+if(d.ok){token=d.token;st('l','✅ Готово к работе. Нажмите "Загрузить товары".');nh()}
+else{st('e','Ошибка: '+d.error)}
+}catch(e){st('e','Ошибка сети: '+e.message)}
+}
+
+async function loadProducts(){
+if(!token){st('e','Токен не найден');return}
+document.getElementById('btnLoad').disabled=true;
+st('l','Загрузка товаров...');
+
+try{
+const h={'Authorization':'Bearer '+token,'Accept-Encoding':'gzip'};
+
+// Загружаем группы
+let folders=[],url='https://api.moysklad.ru/api/remap/1.2/entity/productfolder?limit=100';
+while(url){const r=await fetch(url,{headers:h});if(!r.ok)break;const d=await r.json();(d.rows||[]).forEach(f=>folders.push({id:f.id}));url=d.meta?.nextHref}
+const fm={};folders.forEach((f,i)=>{fm[f.id]=i+1});
+
+// Загружаем товары
+products=[];url='https://api.moysklad.ru/api/remap/1.2/entity/product?limit=100&expand=salePrices';
+while(url){const r=await fetch(url,{headers:h});if(!r.ok)break;const d=await r.json();
+for(const row of d.rows||[]){
+let bc='';for(const b of(row.barcodes||[])){bc=b.ean13||b.ean8||b.code||'';if(bc)break}
+let pr=0;for(const sp of(row.salePrices||[])){if(['Цена продажи','Розничная'].includes(sp.priceType?.name)){pr=(sp.value||0)/100;break}}if(!pr&&row.salePrices?.length)pr=(row.salePrices[0].value||0)/100;
+const fr=row.productFolder||{},fi=fr.id?fm[fr.id]||0:0;
+const code=row.code||row.externalCode||String(products.length+1);
+products.push({
+name:row.name||'(без названия)',
+code:code,
+plu:code,
+barcode:bc,
+weight:row.weight||0,
+isWeighed:row.weighed||false,
+price:pr,
+dept:fi+1,
+folderIndex:fi
+})}
+url=d.meta?.nextHref;st('l','Загружено '+products.length+'...');
+}
+
+displayProducts();
+
+}catch(e){st('e','Ошибка: '+e.message)}finally{document.getElementById('btnLoad').disabled=false}
+}
+
+function displayProducts(){
+if(!products.length){st('e','Товары не найдены');return}
+
+const deptStart=parseInt(document.getElementById('dept').value)||1;
+
+// Показываем
+document.getElementById('resCard').style.display='block';
+document.getElementById('cnt').textContent=products.length;
+
+// Мета-инфо
+const weighed=products.filter(p=>p.isWeighed).length;
+const withCode=products.filter(p=>p.code).length;
+const withBC=products.filter(p=>p.barcode).length;
+document.getElementById('meta').html='<span>Весовых: <strong>'+weighed+'</strong></span><span>С кодом: <strong>'+withCode+'</strong></span><span>Со штрихкодом: <strong>'+withBC+'</strong></span>'
+
+// Таблица
+let html='<table><thead><tr><th>PLU</th><th>Код</th><th>Наименование</th><th>Вес.ШК</th><th>Цена</th><th>Вес</th><th>Отд.</th></tr></thead><tbody>';
+products.forEach(p=>{
+const wbc=genWeightBarcode(p);
+html+='<tr><td>'+p.plu+'</td><td>'+esc(p.code)+'</td><td title="'+esc(p.name)+'">'+esc(p.name)+'</td><td class="wbc">'+wbc+'</td><td>'+(p.price?p.price.toFixed(2):'-')+'</td><td>'+(p.weight||'-')+'</td><td>'+(deptStart+p.folderIndex)+'</td></tr>';
+});
+html+='</tbody></table>';
+document.getElementById('tw').innerHTML=html;
+document.getElementById('btnExport').disabled=false;
+st('s','✅ Загружено '+products.length+' товаров');
+nh();
+}
+
+function genWeightBarcode(p){
+// Весовой штрих-код: префикс(2) + PLU(5) + checksum(1) = EAN-12 или EAN-13
+// Для весовых товаров: 2X + PLU(4-5 цифр) + checksum
+if(!p.code)return'';
+const prefix=parseInt(document.getElementById('prefix').value)||20;
+let pluNum=p.code.replace(/\D/g,'').substring(0,5)||'00000';
+pluNum=pluNum.padStart(5,'0').substring(0,5);
+const base=String(prefix)+pluNum;
+// EAN-13 checksum
+let sum=0;
+for(let i=0;i<base.length;i++){sum+=parseInt(base[i])*(i%2===0?1:3)}
+const check=(10-(sum%10))%10;
+return base+String(check);
+}
+
+function exportTXP(){
+if(!products.length){st('e','Сначала загрузите товары');return}
+const prefix=parseInt(document.getElementById('prefix').value)||20;
+const deptStart=parseInt(document.getElementById('dept').value)||1;
+
+const lines=['Hotkey\tPLU Name\tFresh Commodity Code\tDepartment\tUnit Price\tWeight\tPLU Type\tPrice Type\tLabel Type\tBarcode\tBarcode Format\tValid Days\tPacking Type'];
+
+products.forEach(p=>{
+const wbc=genWeightBarcode(p);
+const priceKop=Math.round((p.price||0)*100);
+const weightG=Math.round((p.weight||0)*1000);
+const isWeight=p.isWeighed?0:1;
+const dept=Math.min(deptStart+p.folderIndex,99);
+const bc=p.barcode||wbc;
+
+lines.push([
+p.plu,
+(p.name||'').substring(0,36),
+(p.code||'').substring(0,6),
+dept,
+priceKop,
+weightG,
+isWeight,
+isWeight===0?0:2,'0',
+bc.substring(0,13),'0','0','0'
+].join('\t'));
+});
+
+const txp=lines.join('\n');
+const blob=new Blob([txp],{type:'text/plain;charset=utf-8'});
+const url=URL.createObjectURL(blob);
+const a=document.createElement('a');
+a.href=url;
+a.download='rongta_plu_'+new Date().toISOString().slice(0,10)+'.txp';
+a.click();
+URL.revokeObjectURL(url);
+st('s','✅ TXP скачан ('+products.length+' записей). Запустите rongta_send.py для отправки в весы.');
+nh();
+}
+
+function esc(t){const d=document.createElement('div');d.textContent=t||'';return d.innerHTML}
+
+init();
+window.addEventListener('load',nh);
+</script>
+</body>
+</html>
